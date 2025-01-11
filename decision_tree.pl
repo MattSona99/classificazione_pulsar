@@ -4,18 +4,18 @@
 % Funzione principale
 run_tree :-
     % Leggi i dati di training
-    findall(dato(Features, Label), dato(Features, Label), TrainingData),
+    findall(dato(Features, Label), dtrain(Features, Label), TrainingData),
 
     % Costruisci l'albero decisionale
     build_tree(TrainingData, Tree),
-    write('Tree built successfully:'), nl, write(Tree), nl,
+   %write('Tree built successfully:'), nl, write(Tree), nl,
 
     % Leggi i dati di test
-    findall(dato(Features, Label), dato(Features, Label), TestData),
+    findall(dato(Features, Label), dtest(Features, Label), TestData),
 
     % Valuta l'albero sui dati di test
     evaluate_tree(Tree, TestData, Accuracy),
-    format('Accuracy: ~2f~n', [Accuracy]),
+    format('Accuracy: ~4f~n', [Accuracy]),
 
     % Calcola e stampa la matrice di confusione
     confusion_matrix(Tree, TestData),
@@ -128,9 +128,7 @@ confusion_matrix(Tree, TestData) :-
     format('True Negatives: ~d~n', [TN]),
     format('False Positives: ~d~n', [FP]),
     format('False Negatives: ~d~n', [FN]),
-    format('True Positives: ~d~n', [TP]),
-    Accuracy is (TP + TN) / (TP + FP + FN + TN),
-    format('Accuracy: ~f~n', [Accuracy]).
+    format('True Positives: ~d~n', [TP]).
 
 % Funzione ricorsiva per confrontare le etichette predette con quelle reali
 evaluate_confusion(_, [], TN, FP, FN, TP, TN, FP, FN, TP).  % Caso base: lista vuota
