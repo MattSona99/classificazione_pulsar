@@ -59,8 +59,6 @@ def train_and_predict_pl():
     run_tree_query = "run_tree."
     list(prolog.query(run_tree_query))
 
-    
-
 def export_to_prolog(X,Y,filename):
     with open(filename, 'w') as f:
         if(filename=='train_data.pl'):

@@ -1,5 +1,6 @@
 :- consult('train_data.pl').
 :- consult('test_data.pl').
+:- consult('pruning.pl').
 
 % Funzione principale
 run_tree :-
@@ -11,16 +12,16 @@ run_tree :-
    %write('Tree built successfully:'), nl, write(Tree), nl,
 
    % Potatura dell'albero
-
+    prune_tree(Tree, PrunedTree),
     % Leggi i dati di test
     findall(dato(Features, Label), dtest(Features, Label), TestData),
 
     % Valuta l'albero sui dati di test
-    evaluate_tree(Tree, TestData, Accuracy),
+    evaluate_tree(PrunedTree, TestData, Accuracy),
     format('Accuracy: ~4f~n', [Accuracy]),
 
     % Calcola e stampa la matrice di confusione
-    confusion_matrix(Tree, TestData),
+    confusion_matrix(PrunedTree, TestData),
     halt.
 
 % Valutazione dell'albero sui dati di test
