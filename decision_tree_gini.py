@@ -3,7 +3,7 @@ from collections import Counter
 from treenode import TreeNode
 
 
-class DecisionTree():
+class DecisionTreeGini():
     """
     Decision Tree Classifier
     Training: Use "train" function with train set features and labels
@@ -17,7 +17,7 @@ class DecisionTree():
         Setting the class with hyperparameters
         max_depth: (int) -> max depth of the tree
         min_samples_leaf: (int) -> min # of samples required to be in a leaf to make the splitting possible
-        min_information_gain: (float) -> min information gain required to make the splitting possible
+        min_gini_gain: (float) -> min Gini gain required to make the splitting possible
         num_of_features_splitting: (str) ->  when splitting if sqrt then sqrt(# of features) features considered, 
                                                             if log then log(# of features) features considered
                                                             else all features are considered
@@ -25,31 +25,29 @@ class DecisionTree():
         """
         self.max_depth = max_depth
         self.min_samples_leaf = min_samples_leaf
-        self.min_information_gain = min_information_gain
+        self.min_gini_gain = min_information_gain
         self.numb_of_features_splitting = numb_of_features_splitting
         self.amount_of_say = amount_of_say
 
-    def _entropy(self, class_probabilities: list) -> float:
-        return sum([-p * np.log2(p) for p in class_probabilities if p>0])
-    
+    def _gini(self, class_probabilities: list) -> float:
+        return 1 - sum([p ** 2 for p in class_probabilities])
+
     def _class_probabilities(self, labels: list) -> list:
         total_count = len(labels)
         return [label_count / total_count for label_count in Counter(labels).values()]
 
-    def _data_entropy(self, labels: list) -> float:
-        return self._entropy(self._class_probabilities(labels))
-    
-    def _partition_entropy(self, subsets: list) -> float:
+    def _data_gini(self, labels: list) -> float:
+        return self._gini(self._class_probabilities(labels))
+
+    def _partition_gini(self, subsets: list) -> float:
         """subsets = list of label lists (EX: [[1,0,0], [1,1,1])"""
         total_count = sum([len(subset) for subset in subsets])
-        return sum([self._data_entropy(subset) * (len(subset) / total_count) for subset in subsets])
-    
+        return sum([self._data_gini(subset) * (len(subset) / total_count) for subset in subsets])
+
     def _split(self, data: np.array, feature_idx: int, feature_val: float) -> tuple:
-        
         mask_below_threshold = data[:, feature_idx] < feature_val
         group1 = data[mask_below_threshold]
         group2 = data[~mask_below_threshold]
-
         return group1, group2
     
     def _select_features_to_use(self, data: np.array) -> list:
@@ -66,37 +64,33 @@ class DecisionTree():
             feature_idx_to_use = feature_idx
 
         return feature_idx_to_use
-        
+
     def _find_best_split(self, data: np.array) -> tuple:
         """
-        Finds the best split (with the lowest entropy) given data
+        Finds the best split (with the lowest Gini impurity) given data
         Returns 2 splitted groups and split information
         """
-        min_part_entropy = 1e9
-        feature_idx_to_use =  self._select_features_to_use(data)
+        min_part_gini = 1e9
+        feature_idx_to_use = self._select_features_to_use(data)
 
         for idx in feature_idx_to_use:
             feature_vals = np.percentile(data[:, idx], q=np.arange(25, 100, 25))
             for feature_val in feature_vals:
-                g1, g2, = self._split(data, idx, feature_val)
-                part_entropy = self._partition_entropy([g1[:, -1], g2[:, -1]])
-                if part_entropy < min_part_entropy:
-                    min_part_entropy = part_entropy
-                    min_entropy_feature_idx = idx
-                    min_entropy_feature_val = feature_val
+                g1, g2 = self._split(data, idx, feature_val)
+                part_gini = self._partition_gini([g1[:, -1], g2[:, -1]])
+                if part_gini < min_part_gini:
+                    min_part_gini = part_gini
+                    min_gini_feature_idx = idx
+                    min_gini_feature_val = feature_val
                     g1_min, g2_min = g1, g2
 
-        return g1_min, g2_min, min_entropy_feature_idx, min_entropy_feature_val, min_part_entropy
+        return g1_min, g2_min, min_gini_feature_idx, min_gini_feature_val, min_part_gini
 
     def _find_label_probs(self, data: np.array) -> np.array:
-
         labels_as_integers = data[:,-1].astype(int)
-        # Calculate the total number of labels
         total_labels = len(labels_as_integers)
-        # Calculate the ratios (probabilities) for each label
         label_probabilities = np.zeros(len(self.labels_in_train), dtype=float)
 
-        # Populate the label_probabilities array based on the specific labels
         for i, label in enumerate(self.labels_in_train):
             label_index = np.where(labels_as_integers == i)[0]
             if len(label_index) > 0:
@@ -114,23 +108,23 @@ class DecisionTree():
             return None
         
         # Find best split
-        split_1_data, split_2_data, split_feature_idx, split_feature_val, split_entropy = self._find_best_split(data)
+        split_1_data, split_2_data, split_feature_idx, split_feature_val, split_gini = self._find_best_split(data)
         
         # Find label probs for the node
         label_probabilities = self._find_label_probs(data)
 
-        # Calculate information gain
-        node_entropy = self._entropy(label_probabilities)
-        information_gain = node_entropy - split_entropy
+        # Calculate Gini gain
+        node_gini = self._gini(self._class_probabilities(data[:, -1]))
+        gini_gain = node_gini - split_gini
         
         # Create node
-        node = TreeNode(data, split_feature_idx, split_feature_val, label_probabilities, information_gain)
+        node = TreeNode(data, split_feature_idx, split_feature_val, label_probabilities, gini_gain)
 
         # Check if the min_samples_leaf has been satisfied (stopping criteria)
         if self.min_samples_leaf > split_1_data.shape[0] or self.min_samples_leaf > split_2_data.shape[0]:
             return node
-        # Check if the min_information_gain has been satisfied (stopping criteria)
-        elif information_gain < self.min_information_gain:
+        # Check if the min_gini_gain has been satisfied (stopping criteria)
+        elif gini_gain < self.min_gini_gain:
             return node
 
         current_depth += 1
@@ -185,7 +179,7 @@ class DecisionTree():
         preds = np.argmax(pred_probs, axis=1)
         
         return preds    
-        
+
     def _print_recursive(self, node: TreeNode, level=0) -> None:
         if node != None:
             self._print_recursive(node.left, level + 1)
@@ -200,4 +194,4 @@ class DecisionTree():
         if node != None:
             self.feature_importances[node.feature_idx] += node.feature_importance
             self._calculate_feature_importance(node.left)
-            self._calculate_feature_importance(node.right)         
+            self._calculate_feature_importance(node.right)

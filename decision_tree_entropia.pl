@@ -1,125 +1,147 @@
 :- consult('train_data.pl').
 :- consult('test_data.pl').
 
+% Funzione principale
+run_tree :-
+    % Leggi i dati di training
+    findall(dato(Features, Label), dtrain(Features, Label), TrainingData),
 
+    % Costruisci l'albero decisionale
+    build_tree(TrainingData, Tree),
+   %write('Tree built successfully:'), nl, write(Tree), nl,
 
-% ================Induzione====================
+   % Potatura dell'albero
 
-:- dynamic alb/1.
+    % Leggi i dati di test
+    findall(dato(Features, Label), dtest(Features, Label), TestData),
 
-induce_albero( Albero ) :-
-	findall( e(Classe,Oggetto), e(Classe,Oggetto), Esempi),
-        findall( Att,a(Att,_), Attributi),
-        induce_albero( Attributi, Esempi, Albero),
-	mostra( Albero ),
-	assert(alb(Albero)).
+    % Valuta l'albero sui dati di test
+    evaluate_tree(Tree, TestData, Accuracy),
+    format('Accuracy: ~4f~n', [Accuracy]),
 
-% induce_albero( +Attributi, +Esempi, -Albero):
-% l'Albero indotto dipende da questi tre casi:
-% (1) Albero = null: l'insieme degli esempi è vuoto
-% (2) Albero = l(Classe): tutti gli esempi sono della stessa classe
-% (3) Albero = t(Attributo, [Val1:SubAlb1, Val2:SubAlb2, ...]):
-%     gli esempi appartengono a più di una classe
-%     Attributo è la radice dell'albero
-%     Val1, Val2, ... sono i possibili valori di Attributo
-%     SubAlb1, SubAlb2,... sono i corrispondenti sottoalberi di
-%     decisione.
-% (4) Albero = l(Classi): non abbiamo Attributi utili per
-%     discriminare ulteriormente
-induce_albero( _, [], null ) :- !.			         % (1)
-induce_albero( _, [e(Classe,_)|Esempi], l(Classe)) :-	         % (2)
-	\+ ( member(e(ClassX,_),Esempi), ClassX \== Classe ),!.  % no esempi di altre classi (OK!!)
-induce_albero( Attributi, Esempi, t(Attributo,SAlberi) ) :-	 % (3)
-	sceglie_attributo( Attributi, Esempi, Attributo), !,     % implementa la politica di scelta
-	del( Attributo, Attributi, Rimanenti ),			 % elimina Attributo scelto
-	a( Attributo, Valori ),					 % ne preleva i valori
-	induce_alberi( Attributo, Valori, Rimanenti, Esempi, SAlberi).
-induce_albero( _, Esempi, l(Classi)) :-                          % finiti gli attributi utili (KO!!)
-	findall( Classe, member(e(Classe,_),Esempi), Classi).
+    % Calcola e stampa la matrice di confusione
+    confusion_matrix(Tree, TestData),
+    halt.
 
-% sceglie_attributo( +Attributi, +Esempi, -MigliorAttributo):
-% seleziona l'Attributo che meglio discrimina le classi; si basa sul
-% concetto della "Gini-disuguaglianza"; utilizza il setof per ordinare
-% gli attributi in base al valore crescente della loro disuguaglianza
-% usare il setof per far questo è dispendioso e si può fare di meglio ..
-sceglie_attributo( Attributi, Esempi, MigliorAttributo )  :-
-	setof( Disuguaglianza/A,
-	      (member(A,Attributi) , disuguaglianza(Esempi,A,Disuguaglianza)),
-	      [_/MigliorAttributo|_] ).
+% Valutazione dell'albero sui dati di test
+evaluate_tree(Tree, TestData, Accuracy) :-
+    evaluate_samples(Tree, TestData, 0, 0, Total, Correct),
+    Accuracy is Correct / Total.
 
-% disuguaglianza(+Esempi, +Attributo, -Dis):
-% Dis � la disuguaglianza combinata dei sottoinsiemi degli esempi
-% partizionati dai valori dell'Attributo
-disuguaglianza( Esempi, Attributo, Dis) :-
-	a( Attributo, AttVals),
-	somma_pesata( Esempi, Attributo, AttVals, 0, Dis).
+% Valutazione campione per campione
+evaluate_samples(_, [], Total, Correct, Total, Correct).
+evaluate_samples(Tree, [dato(Features, TrueLabel) | Rest], TotalAcc, CorrectAcc, Total, Correct) :-
+    predict(Tree, dato(Features, TrueLabel), PredictedLabel),
+    (PredictedLabel = TrueLabel -> NewCorrect is CorrectAcc + 1 ; NewCorrect is CorrectAcc),
+    NewTotal is TotalAcc + 1,
+    evaluate_samples(Tree, Rest, NewTotal, NewCorrect, Total, Correct).
 
-% somma_pesata( +Esempi, +Attributo, +AttVals, +SommaParziale, -Somma)
-% restituisce la Somma pesata delle disuguaglianze
-% Gini = sum from{v} P(v) * sum from{i <> j} P(i|v)*P(j|v)
-somma_pesata( _, _, [], Somma, Somma).
-somma_pesata( Esempi, Att, [Val|Valori], SommaParziale, Somma) :-
-	length(Esempi,N),                                            % quanti sono gli esempi
-	findall( C,						     % EsempiSoddisfatti: lista delle classi ..
-		 (member(e(C,Desc),Esempi) , soddisfa(Desc,[Att=Val])), % .. degli esempi (con ripetizioni)..
-		 EsempiSoddisfatti ),				     % .. per cui Att=Val
-	length(EsempiSoddisfatti, NVal),			     % quanti sono questi esempi
-	NVal > 0, !,                                                 % almeno uno!
-	findall(P,			           % trova tutte le P robabilità
-                (bagof(1,		           %
-                       member(_,EsempiSoddisfatti),
-                       L),
-                 length(L,NVC),
-                 P is NVC/NVal),
-                ClDst),
-%       gini(ClDst,Gini),
-%	NuovaSommaParziale is SommaParziale + Gini*NVal/N,
-	entropia(ClDst,Entropia),
-	NuovaSommaParziale is SommaParziale + Entropia*NVal/N,
-	somma_pesata(Esempi,Att,Valori,NuovaSommaParziale,Somma)
-	;
-	somma_pesata(Esempi,Att,Valori,SommaParziale,Somma). % nessun esempio soddisfa Att = Val
+% Calcolo dell'entropia
+entropy([], 0).
+entropy(List, Entropy) :-
+    length(List, N),
+    findall(P, (member(X, List), count(X, List, Count), P is Count / N), Probabilities),
+    maplist(log_entropy, Probabilities, PartialEntropies),
+    sumlist(PartialEntropies, Entropy).
 
-%entropia
-entropia([], 0).
-entropia([P|Ps], Entropia) :-
-    P > 0,
-    entropia(Ps, RestEntropy),
-    Entropia is -P * log(P) + RestEntropy.
-entropia([0|Ps], Entropia) :-
-    entropia(Ps, Entropia).
+log_entropy(P, E) :-
+    (P =:= 0 -> E = 0 ; E is -P * log(P) / log(2)).
 
+count(X, List, Count) :-
+    include(=(X), List, Matches),
+    length(Matches, Count).
 
-% induce_alberi(Attributi, Valori, AttRimasti, Esempi, SAlberi):
-% induce decisioni SAlberi per sottoinsiemi di Esempi secondo i Valori
-% degli Attributi
-induce_alberi(_,[],_,_,[]).     % nessun valore, nessun sottoalbero
-induce_alberi(Att,[Val1|Valori],AttRimasti,Esempi,[Val1:Alb1|Alberi])  :-
-	attval_subset(Att=Val1,Esempi,SottoinsiemeEsempi),
-	induce_albero(AttRimasti,SottoinsiemeEsempi,Alb1),
-	induce_alberi(Att,Valori,AttRimasti,Esempi,Alberi).
+% Suddividere i dati in due sottoinsiemi
+split([], _, _, [], []).
+split([dato(Features, Label) | Rest], AttrIdx, Threshold, Left, Right) :-
+    nth1(AttrIdx, Features, AttrValue),
+    ( AttrValue < Threshold ->
+        Left = [dato(Features, Label) | LeftRest],
+        Right = RightRest
+    ;
+        Left = LeftRest,
+        Right = [dato(Features, Label) | RightRest]
+    ),
+    split(Rest, AttrIdx, Threshold, LeftRest, RightRest).
 
-% attval_subset( Attributo = Valore, Esempi, Subset):
-%   Subset è il sottoinsieme di Examples che soddisfa la condizione
-%   Attributo = Valore
-attval_subset(AttributoValore,Esempi,Sottoinsieme) :-
-	findall(e(C,O),(member(e(C,O),Esempi),soddisfa(O,[AttributoValore])),Sottoinsieme).
+% Calcolo del guadagno informativo
+information_gain(Data, Left, Right, Gain) :-
+    findall(Label, member(dato(_, Label), Data), Labels),
+    entropy(Labels, EntropyData),
+    length(Data, N),
+    length(Left, N1),
+    length(Right, N2),
+    findall(Label, member(dato(_, Label), Left), LeftLabels),
+    findall(Label, member(dato(_, Label), Right), RightLabels),
+    entropy(LeftLabels, EntropyLeft),
+    entropy(RightLabels, EntropyRight),
+    WeightedEntropy is (N1 / N) * EntropyLeft + (N2 / N) * EntropyRight,
+    Gain is EntropyData - WeightedEntropy.
 
+% Trova la miglior suddivisione (split)
+best_split(Data, BestAttrIdx, BestThreshold, BestGain, BestLeft, BestRight) :-
+    length(Data, N),
+    N > 1,
+    Data = [dato(Features, _) | _],
+    length(Features, NumFeatures),
+    findall((AttrIdx, Threshold, Gain, Left, Right), (
+        between(1, NumFeatures, AttrIdx),
+        findall(Threshold, (member(dato(Features, _), Data), nth1(AttrIdx, Features, Threshold)), Thresholds),
+        list_to_set(Thresholds, UniqueThresholds),
+        member(Threshold, UniqueThresholds),
+        split(Data, AttrIdx, Threshold, Left, Right),
+        length(Left, LLen),
+        length(Right, RLen),
+        LLen > 0,
+        RLen > 0,
+        information_gain(Data, Left, Right, Gain)
+    ), Splits),
+    max_member((BestAttrIdx, BestThreshold, BestGain, BestLeft, BestRight), Splits).
 
+% Costruzione ricorsiva dell'albero decisionale
+build_tree([], leaf(none)).
+build_tree(Data, leaf(Class)) :-
+    findall(Label, member(dato(_, Label), Data), Labels),
+    list_to_set(Labels, UniqueLabels),
+    length(UniqueLabels, 1),
+    UniqueLabels = [Class].
 
-del(T,[T|C],C) :- !.
-del(A,[T|C],[T|C1]) :-
-	del(A,C,C1).
+build_tree(Data, node(AttrIdx, Threshold, LeftTree, RightTree)) :-
+    best_split(Data, AttrIdx, Threshold, Gain, Left, Right),
+    Gain > 0.01,  % Soglia minima per il guadagno informativo
+    build_tree(Left, LeftTree),
+    build_tree(Right, RightTree).
 
-mostra(T) :-
-	mostra(T,0).
-mostra(null,_) :- writeln(' ==> ???').
-mostra(l(X),_) :- write(' ==> '),writeln(X).
-mostra(t(A,L),I) :-
-	nl,tab(I),write(A),nl,I1 is I+2,
-	mostratutto(L,I1).
-mostratutto([],_).
-mostratutto([V:T|C],I) :-
-	tab(I),write(V), I1 is I+2,
-	mostra(T,I1),
-	mostratutto(C,I).
+% Predizione
+predict(leaf(Class), _, Class).
+predict(node(AttrIdx, Threshold, LeftTree, RightTree), dato(Features, _), Class) :-
+    nth1(AttrIdx, Features, Value),
+    ( Value < Threshold ->
+        predict(LeftTree, dato(Features, _), Class)
+    ; 
+        predict(RightTree, dato(Features, _), Class)
+    ).
+
+% Funzione per calcolare la matrice di confusione
+confusion_matrix(Tree, TestData) :-
+    % Passa i contatori iniziali direttamente come 0
+    evaluate_confusion(Tree, TestData, 0, 0, 0, 0, TN, FP, FN, TP),
+    format('Confusion Matrix:~n', []),
+    format('True Negatives: ~d~n', [TN]),
+    format('False Positives: ~d~n', [FP]),
+    format('False Negatives: ~d~n', [FN]),
+    format('True Positives: ~d~n', [TP]).
+
+% Funzione ricorsiva per confrontare le etichette predette con quelle reali
+evaluate_confusion(_, [], TN, FP, FN, TP, TN, FP, FN, TP).  % Caso base: lista vuota
+evaluate_confusion(Tree, [dato(Features, TrueLabel) | Rest], TN, FP, FN, TP, NewTN, NewFP, NewFN, NewTP) :-
+    predict(Tree, dato(Features, _), PredictedLabel),
+    update_counts(PredictedLabel, TrueLabel, TN, FP, FN, TP, TempTN, TempFP, TempFN, TempTP),
+    evaluate_confusion(Tree, Rest, TempTN, TempFP, TempFN, TempTP, NewTN, NewFP, NewFN, NewTP).
+
+% Funzione per aggiornare i contatori della matrice di confusione
+update_counts(PredictedLabel, TrueLabel, TN, FP, FN, TP, NewTN, NewFP, NewFN, NewTP) :-
+    (PredictedLabel = 0, TrueLabel = 0 -> NewTN is TN + 1; NewTN is TN),
+    (PredictedLabel = 1, TrueLabel = 0 -> NewFP is FP + 1; NewFP is FP),
+    (PredictedLabel = 0, TrueLabel = 1 -> NewFN is FN + 1; NewFN is FN),
+    (PredictedLabel = 1, TrueLabel = 1 -> NewTP is TP + 1; NewTP is TP).

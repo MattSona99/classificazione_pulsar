@@ -3,7 +3,8 @@ from pyswip import Prolog
 from sklearn import model_selection
 from sklearn.metrics import confusion_matrix
 
-from decision_tree import DecisionTree
+from decision_tree_entropia import DecisionTreeEntropia
+from decision_tree_gini import DecisionTreeGini
 
 df = pd.read_csv('pulsar_stars.csv', nrows=1000)
 
@@ -16,23 +17,33 @@ print("Test size", len(Y_test))
 
 def train_and_predict_py():
 
-    my_tree_2 = DecisionTree(max_depth=4, min_samples_leaf=1, min_information_gain=0.05)
-    my_tree_2.train(X_train, Y_train)
+    models = [
+        ('Gini', DecisionTreeGini(max_depth=4, min_samples_leaf=1, min_information_gain=0.05)),
+        ('Entropia', DecisionTreeEntropia(max_depth=4, min_samples_leaf=1, min_information_gain=0.05))
+    ]
+    
+    for model_name, model in models:
+        print(f"==========TRAIN IN PYTHON PER {model_name}===========")
+        
+        # Allena il modello
+        model.train(X_train, Y_train)
+        # Predizioni
+        train_preds = model.predict(X_train)
+        test_preds = model.predict(X_test)
 
-    train_preds = my_tree_2.predict(X_train)
-    test_preds = my_tree_2.predict(X_test)
-    print("==========TRAIN IN PYTHON===========")
-    # Matrice di confusione
-    cm = confusion_matrix(Y_test, test_preds)
-    print("Confusion Matrix in PYTHON:")
-
-    TN, FP, FN, TP = cm.ravel()  # Esplode la matrice in 4 valori
-    accuracy = (TN + TP) / (TN + FP + FN + TP)
-    print(f"Accuracy: {accuracy:.4f}")
-    print(f"True Negatives: {TN}")
-    print(f"False Positives: {FP}")
-    print(f"False Negatives: {FN}")
-    print(f"True Positives: {TP}")
+        # Matrice di confusione
+        cm = confusion_matrix(Y_test, test_preds)
+        print(f"Confusion Matrix {model_name} in PYTHON:")
+        TN, FP, FN, TP = cm.ravel()  # Esplode la matrice in 4 valori
+        
+        # Calcola l'accuratezza
+        accuracy = (TN + TP) / (TN + FP + FN + TP)
+        
+        print(f"Accuracy {model_name}: {accuracy:.4f}")
+        print(f"True Negatives {model_name}: {TN}")
+        print(f"False Positives {model_name}: {FP}")
+        print(f"False Negatives {model_name}: {FN}")
+        print(f"True Positives {model_name}: {TP}")
 
 
 def train_and_predict_pl():
@@ -43,39 +54,10 @@ def train_and_predict_pl():
     prolog = Prolog()
     prolog.query("set_prolog_flag(stack_limit, 3*10**9).")
 
-    prolog.consult('decision_tree.pl')
+    prolog.consult('decision_tree_entropia.pl')
     
     run_tree_query = "run_tree."
-    result_run_tree = list(prolog.query(run_tree_query))
-
-    if result_run_tree:
-        print("Tree built successfully, now calculating confusion matrix...")
-
-        # Esegui la query che calcola la matrice di confusione
-        query = "confusion_matrix(Tree, TestData, TN, FP, FN, TP)."
-        result_confusion = list(prolog.query(query))
-
-        # Se la query della matrice di confusione ha restituito dei risultati
-        if result_confusion:
-            TN = result_confusion[0]['TN']
-            FP = result_confusion[0]['FP']
-            FN = result_confusion[0]['FN']
-            TP = result_confusion[0]['TP']
-
-            # Stampa la matrice di confusione
-            print(f"Confusion Matrix in PROLOG:")
-            print(f"True Negatives: {TN}")
-            print(f"False Positives: {FP}")
-            print(f"False Negatives: {FN}")
-            print(f"True Positives: {TP}")
-
-            # Calcola e stampa l'accuratezza
-            accuracy = (TN + TP) / (TN + FP + FN + TP)
-            print(f"Accuracy: {accuracy:.4f}")
-        else:
-            print("Error: No results found for confusion_matrix.")
-    else:
-        print("Error: Tree could not be built.")
+    list(prolog.query(run_tree_query))
 
     
 
@@ -89,6 +71,20 @@ def export_to_prolog(X,Y,filename):
             for features, label in zip(X.values, Y.values):
                 feature_list = ', '.join(map(str, features))
                 f.write(f"dtest([{feature_list}], {label}).\n")
+
+def export_tree_to_prolog(tree, filename):
+    with open(filename, 'w') as f:
+        def write_tree(node):
+            if isinstance(node, dict):
+                attribute = list(node.keys())[0]
+                branches = node[attribute]
+                for value, child in branches.items():
+                    f.write(f"t({attribute}, [{value}])\n")
+                    write_tree(child)
+            else:
+                f.write(f"l({node})\n")
+        write_tree(tree)
+
 
 train_and_predict_py()
 train_and_predict_pl()
