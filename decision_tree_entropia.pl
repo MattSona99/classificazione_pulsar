@@ -21,8 +21,7 @@ run_tree :-
     format('Accuracy: ~4f~n', [Accuracy]),
 
     % Calcola e stampa la matrice di confusione
-    confusion_matrix(PrunedTree, TestData),
-    halt.
+    confusion_matrix(PrunedTree, TestData).
 
 % Valutazione dell'albero sui dati di test
 evaluate_tree(Tree, TestData, Accuracy) :-

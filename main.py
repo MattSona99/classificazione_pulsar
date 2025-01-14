@@ -76,8 +76,8 @@ def cross_validation():
     prolog.query("set_prolog_flag(stack_limit, 3*10**9).")
     prolog.consult('decision_tree_entropia.pl')
 
-    for chunk in chunks:
-        print("========== ANALIZING CHUNK NUMBER " + str(chunks.index(chunk) + 1) + " ===========")
+    for idx, chunk in enumerate(chunks):
+        print(f"========== ANALIZING CHUNK NUMBER {idx + 1} ===========")
         X = chunk.drop('target_class', axis=1)
         Y = chunk['target_class']
 
