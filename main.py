@@ -6,16 +6,19 @@ from sklearn.metrics import confusion_matrix
 from decision_tree_entropia import DecisionTreeEntropia
 from decision_tree_gini import DecisionTreeGini
 
-df = pd.read_csv('pulsar_stars.csv', nrows=1000)
+from sklearn.model_selection import StratifiedKFold
 
-X_train, X_test, Y_train, Y_test = model_selection.train_test_split(df.drop('target_class', axis=1), 
-                                                                    df['target_class'],
-                                                                    test_size=0.2,
-                                                                    stratify=df['target_class'])
-print("Train size", len(Y_train))
-print("Test size", len(Y_test))
+def create_balanced_chunks(df, target_column='target_class', n_chunks=18):
 
-def train_and_predict_py():
+    skf = StratifiedKFold(n_splits=n_chunks, shuffle=True, random_state=42)
+    chunks = []
+
+    for _, chunk_indices in skf.split(df, df[target_column]):
+        chunks.append(df.iloc[chunk_indices])
+
+    return chunks
+
+def train_and_predict_py(X_train, Y_train, X_test, Y_test):
 
     models = [
         ('Gini', DecisionTreeGini(max_depth=4, min_samples_leaf=1, min_information_gain=0.05)),
@@ -23,7 +26,7 @@ def train_and_predict_py():
     ]
     
     for model_name, model in models:
-        print(f"==========TRAIN IN PYTHON PER {model_name}===========")
+        print(f"========== Train in Python with {model_name} ===========")
         
         # Allena il modello
         model.train(X_train, Y_train)
@@ -46,15 +49,10 @@ def train_and_predict_py():
         print(f"True Positives {model_name}: {TP}")
 
 
-def train_and_predict_pl():
+def train_and_predict_pl(X_train, Y_train, X_test, Y_test, prolog):
     export_to_prolog(X_train, Y_train, 'train_data.pl')
     export_to_prolog(X_test, Y_test, 'test_data.pl')
-    print("==========TRAIN IN PROLOG===========")
-
-    prolog = Prolog()
-    prolog.query("set_prolog_flag(stack_limit, 3*10**9).")
-
-    prolog.consult('decision_tree_entropia.pl')
+    print("========== Train in Prolog ===========")
     
     run_tree_query = "run_tree."
     list(prolog.query(run_tree_query))
@@ -70,19 +68,22 @@ def export_to_prolog(X,Y,filename):
                 feature_list = ', '.join(map(str, features))
                 f.write(f"dtest([{feature_list}], {label}).\n")
 
-def export_tree_to_prolog(tree, filename):
-    with open(filename, 'w') as f:
-        def write_tree(node):
-            if isinstance(node, dict):
-                attribute = list(node.keys())[0]
-                branches = node[attribute]
-                for value, child in branches.items():
-                    f.write(f"t({attribute}, [{value}])\n")
-                    write_tree(child)
-            else:
-                f.write(f"l({node})\n")
-        write_tree(tree)
+def cross_validation():
+    df = pd.read_csv('pulsar_stars.csv')
+    chunks = create_balanced_chunks(df)
 
+    prolog = Prolog()
+    prolog.query("set_prolog_flag(stack_limit, 3*10**9).")
+    prolog.consult('decision_tree_entropia.pl')
 
-train_and_predict_py()
-train_and_predict_pl()
+    for chunk in chunks:
+        print("========== ANALIZING CHUNK NUMBER " + str(chunks.index(chunk) + 1) + " ===========")
+        X = chunk.drop('target_class', axis=1)
+        Y = chunk['target_class']
+
+        X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size=0.2, random_state=42)
+
+        train_and_predict_py(X_train, Y_train, X_test, Y_test)
+        train_and_predict_pl(X_train, Y_train, X_test, Y_test, prolog)
+
+cross_validation()

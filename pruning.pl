@@ -19,7 +19,7 @@ prune_tree(node(AttrIdx, Threshold, LeftTree, RightTree), PrunedTree) :-
     ).
 
 % Determina se un sottoalbero deve essere potato
-should_prune(Tree, LeftTree, RightTree) :-
+should_prune(Tree, _, _) :-
     calculate_accuracy(Tree, FullAccuracy),
     calculate_accuracy(leaf_majority(Tree), PrunedAccuracy),
     PrunedAccuracy >= FullAccuracy.  % Potare solo se la precisione non diminuisce.
@@ -31,7 +31,7 @@ calculate_accuracy(Tree, Accuracy) :-
     (Total > 0 -> Accuracy is Correct / Total ; Accuracy is 0).
 
 % Converte un nodo in una foglia basata sulla maggioranza
-convert_to_leaf(node(_, _, \, RightTree), leaf(MajorityClass)) :-
+convert_to_leaf(node(_, _, LeftTree, RightTree), leaf(MajorityClass)) :-
     findall(Label, (collect_labels(LeftTree, Label); collect_labels(RightTree, Label)), Labels),
     majority_class(Labels, MajorityClass).
 
@@ -59,4 +59,3 @@ pack([X|Xs], [N-X|Packed]) :-
 take(_, [], [], []).
 take(X, [Y|Ys], [], [Y|Ys]) :- X \= Y.
 take(X, [X|Xs], [X|Ys], Rest) :- take(X, Xs, Ys, Rest).
-
