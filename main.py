@@ -1,3 +1,6 @@
+import json
+
+import numpy as np
 import pandas as pd
 from pyswip import Prolog
 from sklearn import model_selection
@@ -45,7 +48,7 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
         accuracy = (TN + TP) / (TN + FP + FN + TP)
 
         stats.append({
-            'phase:': 'Python',
+            'phase': 'Python',
             'model': model_name,
             'accuracy': accuracy,
             'confusion_matrix': {
@@ -60,8 +63,41 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
         if(model_name=='Entropia'):
             export_to_prolog(X_train, Y_train, 'train_data.pl')
             export_to_prolog(X_test, Y_test, 'test_data.pl')
-            run_tree_query = "run_tree."
-            list(prolog.query(run_tree_query))
+            run_tree_query = "run_tree(Result)."
+            for solution in prolog.query(run_tree_query):
+                result = solution['Result']  # Estratto direttamente da Prolog
+
+                # Parsing manuale del risultato
+                # Parsing manuale del risultato
+                if isinstance(result, str):
+                    # Rimuovi 'result(', 'accuracy(', 'confusion_matrix(' e le parentesi finali
+                    result = result.replace('result(', '').replace('accuracy(', '').replace('confusion_matrix(',
+                                                                                            '').rstrip('))')
+
+                    # Divide la stringa in parti
+                    parts = result.split(', ')
+
+                    # Rimuovi eventuali caratteri indesiderati come ')'
+                    parts = [part.strip(')') for part in parts]
+
+                    # Converti la prima parte in float (accuratezza)
+                    accuracy = float(parts[0])
+
+                    # Converti i valori della matrice di confusione in interi
+                    TN, FP, FN, TP = map(int, parts[1:])
+
+                    # Aggiungi ai dati statistici
+                    stats.append({
+                        'phase': 'Prolog',
+                        'model': model_name,
+                        'accuracy': accuracy,
+                        'confusion_matrix': {
+                            'TN': TN,
+                            'FP': FP,
+                            'FN': FN,
+                            'TP': TP
+                        },
+                    })
 
     return stats
 
@@ -76,7 +112,7 @@ def export_to_prolog(X,Y,filename):
                 feature_list = ', '.join(map(str, features))
                 f.write(f"dtest([{feature_list}], {label}).\n")
 
-def cross_validation():
+def average_validation():
     df = pd.read_csv('pulsar_stars.csv')
     chunks = create_balanced_chunks(df)
 
@@ -104,29 +140,47 @@ def average_stats(all_stats):
         model_name = stat['model']
         if model_name not in model_stats:
             model_stats[model_name] = {
-                'accuracy': [],
-                'TN': [],
-                'FP': [],
-                'FN': [],
-                'TP': []
+                'accuracy': {'Python': [], 'Prolog': []},
+                'TN': {'Python': [], 'Prolog': []},
+                'FP': {'Python': [], 'Prolog': []},
+                'FN': {'Python': [], 'Prolog': []},
+                'TP': {'Python': [], 'Prolog': []}
             }
-        model_stats[model_name]['accuracy'].append(stat['accuracy'])
-        model_stats[model_name]['TN'].append(stat['confusion_matrix']['TN'])
-        model_stats[model_name]['FP'].append(stat['confusion_matrix']['FP'])
-        model_stats[model_name]['FN'].append(stat['confusion_matrix']['FN'])
-        model_stats[model_name]['TP'].append(stat['confusion_matrix']['TP'])
+
+        phase = stat['phase']
+        model_stats[model_name]['accuracy'][phase].append(stat['accuracy'])
+        model_stats[model_name]['TN'][phase].append(stat['confusion_matrix']['TN'])
+        model_stats[model_name]['FP'][phase].append(stat['confusion_matrix']['FP'])
+        model_stats[model_name]['FN'][phase].append(stat['confusion_matrix']['FN'])
+        model_stats[model_name]['TP'][phase].append(stat['confusion_matrix']['TP'])
 
     for model_name, values in model_stats.items():
-        avg_accuracy = sum(values['accuracy']) / len(values['accuracy'])
-        avg_TN = sum(values['TN']) / len(values['TN'])
-        avg_FP = sum(values['FP']) / len(values['FP'])
-        avg_FN = sum(values['FN']) / len(values['FN'])
-        avg_TP = sum(values['TP']) / len(values['TP'])
+        # Stampa per Python
+        avg_accuracy_python = sum(values['accuracy']['Python']) / len(values['accuracy']['Python'])
+        avg_TN_python = sum(values['TN']['Python']) / len(values['TN']['Python'])
+        avg_FP_python = sum(values['FP']['Python']) / len(values['FP']['Python'])
+        avg_FN_python = sum(values['FN']['Python']) / len(values['FN']['Python'])
+        avg_TP_python = sum(values['TP']['Python']) / len(values['TP']['Python'])
 
         print(f"Model: {model_name}")
-        print(f"  Average Accuracy: {avg_accuracy:.4f}")
-        print(f"  Average Confusion Matrix:")
-        print(f"    TN: {avg_TN:.2f}, FP: {avg_FP:.2f}, FN: {avg_FN:.2f}, TP: {avg_TP:.2f}")
+        print(f"  Python - Average Accuracy: {avg_accuracy_python:.4f}")
+        print(f"  Python - Average Confusion Matrix:")
+        print(
+            f"    TN: {avg_TN_python:.2f}, FP: {avg_FP_python:.2f}, FN: {avg_FN_python:.2f}, TP: {avg_TP_python:.2f}")
 
-stats = cross_validation()
+        # Stampa per Prolog
+        avg_accuracy_prolog = sum(values['accuracy']['Prolog']) / len(values['accuracy']['Prolog']) if \
+        values['accuracy']['Prolog'] else 0
+        avg_TN_prolog = sum(values['TN']['Prolog']) / len(values['TN']['Prolog']) if values['TN']['Prolog'] else 0
+        avg_FP_prolog = sum(values['FP']['Prolog']) / len(values['FP']['Prolog']) if values['FP']['Prolog'] else 0
+        avg_FN_prolog = sum(values['FN']['Prolog']) / len(values['FN']['Prolog']) if values['FN']['Prolog'] else 0
+        avg_TP_prolog = sum(values['TP']['Prolog']) / len(values['TP']['Prolog']) if values['TP']['Prolog'] else 0
+
+        print(f"  Prolog - Average Accuracy: {avg_accuracy_prolog:.4f}")
+        print(f"  Prolog - Average Confusion Matrix:")
+        print(
+            f"    TN: {avg_TN_prolog:.2f}, FP: {avg_FP_prolog:.2f}, FN: {avg_FN_prolog:.2f}, TP: {avg_TP_prolog:.2f}")
+
+
+stats = average_validation()
 average_stats(stats)

@@ -2,26 +2,29 @@
 :- consult('test_data.pl').
 :- consult('pruning.pl').
 
-% Funzione principale
-run_tree :-
+% Funzione principale modificata
+run_tree(Result) :-
     % Leggi i dati di training
     findall(dato(Features, Label), dtrain(Features, Label), TrainingData),
 
     % Costruisci l'albero decisionale
     build_tree(TrainingData, Tree),
-   %write('Tree built successfully:'), nl, write(Tree), nl,
 
-   % Potatura dell'albero
+    % Potatura dell'albero
     prune_tree(Tree, PrunedTree),
+
     % Leggi i dati di test
     findall(dato(Features, Label), dtest(Features, Label), TestData),
 
     % Valuta l'albero sui dati di test
     evaluate_tree(PrunedTree, TestData, Accuracy),
-    format('Accuracy: ~4f~n', [Accuracy]),
 
-    % Calcola e stampa la matrice di confusione
-    confusion_matrix(PrunedTree, TestData).
+    % Calcola la matrice di confusione
+    evaluate_confusion(PrunedTree, TestData, 0, 0, 0, 0, TN, FP, FN, TP),
+
+    % Ritorna il risultato come un termine strutturato
+    Result = result(accuracy(Accuracy), confusion_matrix(TN, FP, FN, TP)).
+
 
 % Valutazione dell'albero sui dati di test
 evaluate_tree(Tree, TestData, Accuracy) :-
