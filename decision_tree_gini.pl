@@ -143,3 +143,18 @@ update_counts(PredictedLabel, TrueLabel, TN, FP, FN, TP, NewTN, NewFP, NewFN, Ne
     (PredictedLabel = 1, TrueLabel = 0 -> NewFP is FP + 1; NewFP is FP),
     (PredictedLabel = 0, TrueLabel = 1 -> NewFN is FN + 1; NewFN is FN),
     (PredictedLabel = 1, TrueLabel = 1 -> NewTP is TP + 1; NewTP is TP).
+
+% Classificazione di un singolo oggetto
+classify_object(Tree, Features, PredictedClass) :-
+    % Crea un dato fittizio senza etichetta per effettuare la predizione
+    dato(Features, _) = Object,
+    predict(Tree, Object, PredictedClass).
+
+% Predizione dinamica basata su input da Python
+classify_example(InputFeatures, PredictedClass) :-
+    % Leggi i dati di training e costruisci l'albero
+    findall(dato(Features, Label), dtrain(Features, Label), TrainingData),
+    build_tree(TrainingData, Tree),
+    prune_tree(Tree, PrunedTree),
+    % Predizione usando le caratteristiche passate da Python
+    classify_object(PrunedTree, InputFeatures, PredictedClass).
