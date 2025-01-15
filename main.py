@@ -1,6 +1,3 @@
-import json
-
-import numpy as np
 import pandas as pd
 from pyswip import Prolog
 from sklearn import model_selection
@@ -22,18 +19,18 @@ def create_balanced_chunks(df, target_column='target_class', n_chunks=18):
 
     return chunks
 
-def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
 
+def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
     stats = []
 
     models = [
-        ('Gini', DecisionTreeGini(max_depth=4, min_samples_leaf=1, min_information_gain=0.05)),
-        ('Entropia', DecisionTreeEntropia(max_depth=4, min_samples_leaf=1, min_information_gain=0.05))
+        ('Gini', DecisionTreeGini(max_depth=4, min_samples_leaf=1, min_information_gain=0.05), 'decision_tree_gini.pl'),
+        ('Entropia', DecisionTreeEntropia(max_depth=4, min_samples_leaf=1, min_information_gain=0.05),
+         'decision_tree_entropia.pl')
     ]
-    
-    for model_name, model in models:
 
-        # ========= TRAIN E TEST IN PYTHON =========   
+    for model_name, model, prolog_file in models:
+        # ========= TRAIN E TEST IN PYTHON =========
         # Allena il modello
         model.train(X_train, Y_train)
         # Predizioni
@@ -43,7 +40,7 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
         # Matrice di confusione
         cm = confusion_matrix(Y_test, test_preds)
         TN, FP, FN, TP = cm.ravel()  # Esplode la matrice in 4 valori
-        
+
         # Calcola l'accuratezza
         accuracy = (TN + TP) / (TN + FP + FN + TP)
 
@@ -60,46 +57,51 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
         })
 
         # ========= TRAIN E TEST IN PROLOG =========
-        if(model_name=='Entropia'):
-            export_to_prolog(X_train, Y_train, 'train_data.pl')
-            export_to_prolog(X_test, Y_test, 'test_data.pl')
-            run_tree_query = "run_tree(Result)."
-            for solution in prolog.query(run_tree_query):
-                result = solution['Result']  # Estratto direttamente da Prolog
+        # Consulta il file Prolog corretto
+        prolog.consult(prolog_file)
 
-                # Parsing manuale del risultato
-                # Parsing manuale del risultato
-                if isinstance(result, str):
-                    # Rimuovi 'result(', 'accuracy(', 'confusion_matrix(' e le parentesi finali
-                    result = result.replace('result(', '').replace('accuracy(', '').replace('confusion_matrix(',
-                                                                                            '').rstrip('))')
+        # Esporta i dati in Prolog
+        export_to_prolog(X_train, Y_train, 'train_data.pl')
+        export_to_prolog(X_test, Y_test, 'test_data.pl')
 
-                    # Divide la stringa in parti
-                    parts = result.split(', ')
+        # Esegui la query per il modello
+        run_tree_query = "run_tree(Result)."
+        for solution in prolog.query(run_tree_query):
+            result = solution['Result']  # Estratto direttamente da Prolog
 
-                    # Rimuovi eventuali caratteri indesiderati come ')'
-                    parts = [part.strip(')') for part in parts]
+            # Parsing manuale del risultato
+            if isinstance(result, str):
+                # Rimuovi 'result(', 'accuracy(', 'confusion_matrix(' e le parentesi finali
+                result = result.replace('result(', '').replace('accuracy(', '').replace('confusion_matrix(',
+                                                                                        '').rstrip('))')
 
-                    # Converti la prima parte in float (accuratezza)
-                    accuracy = float(parts[0])
+                # Divide la stringa in parti
+                parts = result.split(', ')
 
-                    # Converti i valori della matrice di confusione in interi
-                    TN, FP, FN, TP = map(int, parts[1:])
+                # Rimuovi eventuali caratteri indesiderati come ')'
+                parts = [part.strip(')') for part in parts]
 
-                    # Aggiungi ai dati statistici
-                    stats.append({
-                        'phase': 'Prolog',
-                        'model': model_name,
-                        'accuracy': accuracy,
-                        'confusion_matrix': {
-                            'TN': TN,
-                            'FP': FP,
-                            'FN': FN,
-                            'TP': TP
-                        },
-                    })
+                # Converti la prima parte in float (accuratezza)
+                accuracy = float(parts[0])
+
+                # Converti i valori della matrice di confusione in interi
+                TN, FP, FN, TP = map(int, parts[1:])
+
+                # Aggiungi ai dati statistici
+                stats.append({
+                    'phase': 'Prolog',
+                    'model': model_name,
+                    'accuracy': accuracy,
+                    'confusion_matrix': {
+                        'TN': TN,
+                        'FP': FP,
+                        'FN': FN,
+                        'TP': TP
+                    },
+                })
 
     return stats
+
 
 def export_to_prolog(X,Y,filename):
     with open(filename, 'w') as f:
@@ -120,7 +122,6 @@ def average_validation():
 
     prolog = Prolog()
     prolog.query("set_prolog_flag(stack_limit, 3*10**9).")
-    prolog.consult('decision_tree_entropia.pl')
 
     for idx, chunk in enumerate(tqdm(chunks, desc="Cross-validation progress")):
         X = chunk.drop('target_class', axis=1)
@@ -131,7 +132,12 @@ def average_validation():
         stats = train_and_test(X_train, Y_train, X_test, Y_test, prolog)
         all_stats.extend(stats)
 
+    aa = list(prolog.query('classify_example([24.484375, 41.16544067, 4.347698018, 18.75114241, 109.7892977, 82.21609152, 0.010425467, -1.259046483],PredictedClass).'))
+
+    print(aa)
+
     return all_stats
+
 
 def average_stats(all_stats):
     model_stats = {}

@@ -1,25 +1,31 @@
 :- consult('train_data.pl').
 :- consult('test_data.pl').
+:- consult('pruning.pl').
 
 % Funzione principale
-run_tree :-
+run_tree(Result) :-
     % Leggi i dati di training
     findall(dato(Features, Label), dtrain(Features, Label), TrainingData),
 
     % Costruisci l'albero decisionale
     build_tree(TrainingData, Tree),
-   %write('Tree built successfully:'), nl, write(Tree), nl,
+
+    % Potatura dell'albero
+    prune_tree(Tree, PrunedTree),
 
     % Leggi i dati di test
     findall(dato(Features, Label), dtest(Features, Label), TestData),
 
     % Valuta l'albero sui dati di test
-    evaluate_tree(Tree, TestData, Accuracy),
-    format('Accuracy: ~4f~n', [Accuracy]),
+    evaluate_tree(PrunedTree, TestData, Accuracy),
 
-    % Calcola e stampa la matrice di confusione
-    confusion_matrix(Tree, TestData),
-    halt.
+    % Calcola la matrice di confusione
+    evaluate_confusion(PrunedTree, TestData, 0, 0, 0, 0, TN, FP, FN, TP),
+
+    % Ritorna il risultato come un termine strutturato
+    Result = result(accuracy(Accuracy), confusion_matrix(TN, FP, FN, TP)).
+
+
 
 % Valutazione dell'albero sui dati di test
 evaluate_tree(Tree, TestData, Accuracy) :-
@@ -34,81 +40,96 @@ evaluate_samples(Tree, [dato(Features, TrueLabel) | Rest], TotalAcc, CorrectAcc,
     NewTotal is TotalAcc + 1,
     evaluate_samples(Tree, Rest, NewTotal, NewCorrect, Total, Correct).
 
-% Calcolo dell'entropia
-entropy([], 0).
-entropy(List, Entropy) :-
-    length(List, N),
-    findall(P, (member(X, List), count(X, List, Count), P is Count / N), Probabilities),
-    maplist(log_entropy, Probabilities, PartialEntropies),
-    sumlist(PartialEntropies, Entropy).
+% Calcolo del coefficiente di Gini
+gini([], 0).
+gini(Labels, Gini) :-
+    msort(Labels, SortedLabels),
+    encode(SortedLabels, Frequencies),
+    format('Frequenze: ~w~n', [Frequencies]),
+    length(Labels, Total),
+    findall(ProbSq, (member(Freq, Frequencies), ProbSq is (Freq / Total) ^ 2), ProbSqs),
+    format('Probabilità al quadrato: ~w~n', [ProbSqs]),
+    sumlist(ProbSqs, SumProbSqs),
+    Gini is 1 - SumProbSqs,
+    format('Gini: ~f~n', [Gini]).
 
-log_entropy(P, E) :- 
-    (P =:= 0 -> E = 0 ; E is -P * log(P) / log(2)).
 
-count(X, List, Count) :- 
-    include(=(X), List, Matches), 
+square(X, XSquared) :- XSquared is X * X.
+
+
+count(X, List, Count) :-
+    include(=(X), List, Matches),
     length(Matches, Count).
 
 % Suddividere i dati in due sottoinsiemi
 split([], _, _, [], []).
-split([dato(Features, Label) | Rest], AttrIdx, Threshold, Left, Right) :-
-    nth1(AttrIdx, Features, AttrValue),
-    ( AttrValue < Threshold ->
-        Left = [dato(Features, Label) | LeftRest],
-        Right = RightRest
-    ; 
-        Left = LeftRest,
-        Right = [dato(Features, Label) | RightRest]
-    ),
-    split(Rest, AttrIdx, Threshold, LeftRest, RightRest).
+split(Examples, Attribute, Threshold, LeftSet, RightSet) :-
+    partition(
+        [Features, _] >> (nth1(Attribute, Features, Value), Value =< Threshold),
+        Examples,
+        LeftSet,
+        RightSet
+    ).
 
-% Calcolo del guadagno informativo
-information_gain(Data, Left, Right, Gain) :-
-    findall(Label, member(dato(_, Label), Data), Labels),
-    entropy(Labels, EntropyData),
-    length(Data, N),
-    length(Left, N1),
-    length(Right, N2),
-    findall(Label, member(dato(_, Label), Left), LeftLabels),
-    findall(Label, member(dato(_, Label), Right), RightLabels),
-    entropy(LeftLabels, EntropyLeft),
-    entropy(RightLabels, EntropyRight),
-    WeightedEntropy is (N1 / N) * EntropyLeft + (N2 / N) * EntropyRight,
-    Gain is EntropyData - WeightedEntropy.
+
+% Calcolo del guadagno di Gini
+gini_gain(Set, LeftSet, RightSet, GiniGain) :-
+    % Calcola il Gini dell'intero set
+    maplist(get_label, Set, Labels),
+    gini(Labels, GiniS),
+    % Calcola il Gini dei sottoinsiemi
+    maplist(get_label, LeftSet, LabelsL),
+    gini(LabelsL, GiniSL),
+    maplist(get_label, RightSet, LabelsR),
+    gini(LabelsR, GiniSR),
+    % Calcola le proporzioni dei sottoinsiemi
+    length(Set, Total),
+    length(LeftSet, TotalL),
+    length(RightSet, TotalR),
+    PropSL is TotalL / Total,
+    PropSR is TotalR / Total,
+    % Calcola il Gini Gain
+    GiniGain is GiniS - (PropSL * GiniSL + PropSR * GiniSR).
+
 
 % Trova la miglior suddivisione (split)
-best_split(Data, BestAttrIdx, BestThreshold, BestGain, BestLeft, BestRight) :-
-    length(Data, N),
-    N > 1,
-    Data = [dato(Features, _) | _],
-    length(Features, NumFeatures),
-    findall((AttrIdx, Threshold, Gain, Left, Right), (
-        between(1, NumFeatures, AttrIdx),
-        findall(Threshold, (member(dato(Features, _), Data), nth1(AttrIdx, Features, Threshold)), Thresholds),
-        list_to_set(Thresholds, UniqueThresholds),
-        member(Threshold, UniqueThresholds),
-        split(Data, AttrIdx, Threshold, Left, Right),
-        length(Left, LLen),
-        length(Right, RLen),
-        LLen > 0,
-        RLen > 0,
-        information_gain(Data, Left, Right, Gain)
-    ), Splits),
-    max_member((BestAttrIdx, BestThreshold, BestGain, BestLeft, BestRight), Splits).
+% Funzione per trovare lo split migliore
+best_split(Examples, Attribute, BestThreshold, BestGain, LeftSet, RightSet) :-
+    findall(Value, (member([Features, _], Examples), nth1(Attribute, Features, Value)), Values),
+    sort(Values, SortedValues),
+    findall(
+        Gain-Threshold-Left-Right,
+        (member(Threshold, SortedValues),
+         split(Examples, Attribute, Threshold, Left, Right),
+         gini_gain(Examples, Left, Right, Gain)),
+        GainsThresholdsSubsets
+    ),
+    max_member(BestGain-BestThreshold-LeftSet-RightSet, GainsThresholdsSubsets).
+
 
 % Costruzione ricorsiva dell'albero decisionale
 build_tree([], leaf(none)).
 build_tree(Data, leaf(Class)) :-
+    % Trova tutte le etichette dei dati
     findall(Label, member(dato(_, Label), Data), Labels),
+    % Conta le etichette uniche
     list_to_set(Labels, UniqueLabels),
-    length(UniqueLabels, 1),
-    UniqueLabels = [Class].
+    length(UniqueLabels, NumClasses),
+    % Se c'è solo una classe, crea una foglia
+    ( NumClasses = 1 ->
+        UniqueLabels = [Class]
+    ;
+        % Altrimenti, crea una foglia con la classe più comune
+        aggregate(max(Count, Label), count(Label, Labels, Count), max(_, Class))
+    ).
+
 
 build_tree(Data, node(AttrIdx, Threshold, LeftTree, RightTree)) :-
-    best_split(Data, AttrIdx, Threshold, Gain, Left, Right),
-    Gain > 0.01,  % Soglia minima per il guadagno informativo
-    build_tree(Left, LeftTree),
-    build_tree(Right, RightTree).
+    best_split(Data, AttrIdx, Threshold, Gain, LeftSet, RightSet),
+    Gain > 0,  % Controlla che il guadagno sia positivo
+    build_tree(LeftSet, LeftTree),
+    build_tree(RightSet, RightTree).
+
 
 % Predizione
 predict(leaf(Class), _, Class).
@@ -116,13 +137,12 @@ predict(node(AttrIdx, Threshold, LeftTree, RightTree), dato(Features, _), Class)
     nth1(AttrIdx, Features, Value),
     ( Value < Threshold ->
         predict(LeftTree, dato(Features, _), Class)
-    ; 
+    ;
         predict(RightTree, dato(Features, _), Class)
     ).
 
 % Funzione per calcolare la matrice di confusione
 confusion_matrix(Tree, TestData) :-
-    % Passa i contatori iniziali direttamente come 0
     evaluate_confusion(Tree, TestData, 0, 0, 0, 0, TN, FP, FN, TP),
     format('Confusion Matrix:~n', []),
     format('True Negatives: ~d~n', [TN]),
@@ -131,7 +151,7 @@ confusion_matrix(Tree, TestData) :-
     format('True Positives: ~d~n', [TP]).
 
 % Funzione ricorsiva per confrontare le etichette predette con quelle reali
-evaluate_confusion(_, [], TN, FP, FN, TP, TN, FP, FN, TP).  % Caso base: lista vuota
+evaluate_confusion(_, [], TN, FP, FN, TP, TN, FP, FN, TP).
 evaluate_confusion(Tree, [dato(Features, TrueLabel) | Rest], TN, FP, FN, TP, NewTN, NewFP, NewFN, NewTP) :-
     predict(Tree, dato(Features, _), PredictedLabel),
     update_counts(PredictedLabel, TrueLabel, TN, FP, FN, TP, TempTN, TempFP, TempFN, TempTP),
