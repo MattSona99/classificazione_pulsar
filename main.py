@@ -260,7 +260,7 @@ def index():
         criteria = request.form['method']
         predicted_class = classify_data(data, criteria, prolog)
 
-        if predicted_class == "pulsar":
+        if predicted_class == 1:
             result_text = "Classified object: Pulsar"
             result_image = url_for('static', filename='pulsar.jpeg')
         else:
