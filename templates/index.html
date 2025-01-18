@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Classificazione di pulsar</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+
+<body>
+    <div class="stats-container">
+        <h2>Statistiche</h2>
+        <div class="stats-grid">
+            {% for stat in matrix %}
+            <div class="model-stats">
+                <h3>{{ stat['phase'] }} - {{ stat['model'] }}</h3>
+                <p><strong>Accuracy:</strong> {{ stat['accuracy'] | round(4) }}</p>
+                <p><strong>Precision:</strong> {{ stat['precision'] | round(4) }}</p>
+                <p><strong>Recall:</strong> {{ stat['recall'] | round(4) }}</p>
+                <p><strong>F1-Score:</strong> {{ stat['f1_score'] | round(4) }}</p>
+                <p><strong>Error:</strong> {{ stat['error'] | round(4) }}</p>
+                <h4>Matrice di Confusione:</h4>
+                <ul>
+                    <li>True negatives (TN): {{ stat['confusion_matrix']['TN'] }}</li>
+                    <li>False positives (FP): {{ stat['confusion_matrix']['FP'] }}</li>
+                    <li>False negatives (FN): {{ stat['confusion_matrix']['FN'] }}</li>
+                    <li>True positives (TP): {{ stat['confusion_matrix']['TP'] }}</li>
+                </ul>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    <div class="classification-title-container">
+        <h2>Classificazione</h2>
+    </div>
+    <div class="form-result-container">
+        <div class="form-container">
+            <form action="/" method="POST">
+                <div class="form-row">
+                    <label for="mean_integrated">Mean of the integrated profile</label>
+                    <input type="text" id="mean_integrated" name="mean_integrated" required>
+                </div>
+                <div class="form-row">
+                    <label for="std_integrated">Standard deviation of the integrated profile</label>
+                    <input type="text" id="std_integrated" name="std_integrated" required>
+                </div>
+                <div class="form-row">
+                    <label for="kurtosis_integrated">Excess kurtosis of the integrated profile</label>
+                    <input type="text" id="kurtosis_integrated" name="kurtosis_integrated" required>
+                </div>
+                <div class="form-row">
+                    <label for="skewness_integrated">Skewness of the integrated profile</label>
+                    <input type="text" id="skewness_integrated" name="skewness_integrated" required>
+                </div>
+                <div class="form-row">
+                    <label for="mean_dm_snr">Mean of the DM-SNR curve</label>
+                    <input type="text" id="mean_dm_snr" name="mean_dm_snr" required>
+                </div>
+                <div class="form-row">
+                    <label for="std_dm_snr">Standard deviation of the DM-SNR curve</label>
+                    <input type="text" id="std_dm_snr" name="std_dm_snr" required>
+                </div>
+                <div class="form-row">
+                    <label for="kurtosis_dm_snr">Excess kurtosis of the DM-SNR curve</label>
+                    <input type="text" id="kurtosis_dm_snr" name="kurtosis_dm_snr" required>
+                </div>
+                <div class="form-row">
+                    <label for="skewness_dm_snr">Skewness of the DM-SNR curve</label>
+                    <input type="text" id="skewness_dm_snr" name="skewness_dm_snr" required>
+                </div>
+                <div class="method-container">
+                    <input type="radio" id="gini" name="method" value="Gini" required checked>
+                    <label for="gini">Gini</label>
+                    <input type="radio" id="entropy" name="method" value="Entropy">
+                    <label for="entropy">Entropia</label>
+                </div>
+                <button type="submit">Invia</button>
+            </form>
+        </div>
+        <div class="result-container">
+            <p id="result-text">{{ result_text }}</p>
+            {% if result_image %}
+            <img id="result-image" src="{{ result_image }}" alt="" />
+            {% endif %}
+        </div>
+    </div>
+
+</body>
+
+</html>

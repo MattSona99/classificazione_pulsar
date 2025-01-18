@@ -1,3 +1,4 @@
+from flask import Flask, render_template, request, url_for
 import pandas as pd
 import tkinter as tk
 from tkinter import ttk, messagebox
@@ -10,6 +11,8 @@ from decision_tree_entropia import DecisionTreeEntropia
 from decision_tree_gini import DecisionTreeGini
 
 from sklearn.model_selection import StratifiedKFold
+
+from gui import run_gui
 
 matrix = []
 def create_balanced_chunks(df, target_column='target_class', n_chunks=18):
@@ -46,11 +49,19 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
 
         # Calcola l'accuratezza
         accuracy = (TN + TP) / (TN + FP + FN + TP)
+        precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+        recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+        f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        error = 1 - accuracy
 
         stats.append({
             'phase': 'Python',
             'model': model_name,
             'accuracy': accuracy,
+            'precision': precision,
+            'recall': recall,
+            'f1_score': f1,
+            'error': error,
             'confusion_matrix': {
                 'TN': TN,
                 'FP': FP,
@@ -86,6 +97,10 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
 
                 # Converti la prima parte in float (accuratezza)
                 accuracy = float(parts[0])
+                precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+                recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+                f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+                error = 1 - accuracy
 
                 # Converti i valori della matrice di confusione in interi
                 TN, FP, FN, TP = map(int, parts[1:])
@@ -95,6 +110,10 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
                     'phase': 'Prolog',
                     'model': model_name,
                     'accuracy': accuracy,
+                    'precision': precision,
+                    'recall': recall,
+                    'f1_score': f1,
+                    'error': error,
                     'confusion_matrix': {
                         'TN': TN,
                         'FP': FP,
@@ -117,7 +136,7 @@ def export_to_prolog(X,Y,filename):
                 feature_list = ', '.join(map(str, features))
                 f.write(f"dtest([{feature_list}], {label}).\n")
 
-def average_validation():
+def validation():
     df = pd.read_csv('pulsar_stars.csv')
     chunks = create_balanced_chunks(df)
 
@@ -146,6 +165,10 @@ def average_stats(all_stats):
         if model_name not in model_stats:
             model_stats[model_name] = {
                 'accuracy': {'Python': [], 'Prolog': []},
+                'precision': {'Python': [], 'Prolog': []},
+                'recall': {'Python': [], 'Prolog': []},
+                'f1_score': {'Python': [], 'Prolog': []},
+                'error': {'Python': [], 'Prolog': []},
                 'TN': {'Python': [], 'Prolog': []},
                 'FP': {'Python': [], 'Prolog': []},
                 'FN': {'Python': [], 'Prolog': []},
@@ -154,34 +177,49 @@ def average_stats(all_stats):
 
         phase = stat['phase']
         model_stats[model_name]['accuracy'][phase].append(stat['accuracy'])
+        model_stats[model_name]['precision'][phase].append(stat['precision'])
+        model_stats[model_name]['recall'][phase].append(stat['recall'])
+        model_stats[model_name]['f1_score'][phase].append(stat['f1_score'])
+        model_stats[model_name]['error'][phase].append(stat['error'])
         model_stats[model_name]['TN'][phase].append(stat['confusion_matrix']['TN'])
         model_stats[model_name]['FP'][phase].append(stat['confusion_matrix']['FP'])
         model_stats[model_name]['FN'][phase].append(stat['confusion_matrix']['FN'])
         model_stats[model_name]['TP'][phase].append(stat['confusion_matrix']['TP'])
 
     for model_name, values in model_stats.items():
-        # Stampa per Python
+        # Calcola le medie per Python
         avg_accuracy_python = sum(values['accuracy']['Python']) / len(values['accuracy']['Python'])
-        avg_TN_python = int(sum(values['TN']['Python']) / len(values['TN']['Python']))
-        avg_FP_python = int(sum(values['FP']['Python']) / len(values['FP']['Python']))
-        avg_FN_python = int(sum(values['FN']['Python']) / len(values['FN']['Python']))
-        avg_TP_python = int(sum(values['TP']['Python']) / len(values['TP']['Python']))
+        avg_precision_python = sum(values['precision']['Python']) / len(values['precision']['Python'])
+        avg_recall_python = sum(values['recall']['Python']) / len(values['recall']['Python'])
+        avg_f1_python = sum(values['f1_score']['Python']) / len(values['f1_score']['Python'])
+        avg_error_python = sum(values['error']['Python']) / len(values['error']['Python'])
+        avg_TN_python = sum(values['TN']['Python'])
+        avg_FP_python = sum(values['FP']['Python'])
+        avg_FN_python = sum(values['FN']['Python'])
+        avg_TP_python = sum(values['TP']['Python'])
 
         matrix.append({
-                    'phase': 'Python',
-                    'model': model_name,
-                    'accuracy': avg_accuracy_python,
-                    'confusion_matrix': {
-                        'TN': avg_TN_python,
-                        'FP': avg_FP_python,
-                        'FN': avg_FN_python,
-                        'TP': avg_TP_python
-                    },
-                })
+            'phase': 'Python',
+            'model': model_name,
+            'accuracy': avg_accuracy_python,
+            'precision': avg_precision_python,
+            'recall': avg_recall_python,
+            'f1_score': avg_f1_python,
+            'error': avg_error_python,
+            'confusion_matrix': {
+                'TN': avg_TN_python,
+                'FP': avg_FP_python,
+                'FN': avg_FN_python,
+                'TP': avg_TP_python
+            },
+        })
 
-        # Stampa per Prolog
-        avg_accuracy_prolog = sum(values['accuracy']['Prolog']) / len(values['accuracy']['Prolog']) if \
-        values['accuracy']['Prolog'] else 0
+        # Calcola le medie per Prolog
+        avg_accuracy_prolog = sum(values['accuracy']['Prolog']) / len(values['accuracy']['Prolog']) if values['accuracy']['Prolog'] else 0
+        avg_precision_prolog = sum(values['precision']['Prolog']) / len(values['precision']['Prolog']) if values['precision']['Prolog'] else 0
+        avg_recall_prolog = sum(values['recall']['Prolog']) / len(values['recall']['Prolog']) if values['recall']['Prolog'] else 0
+        avg_f1_prolog = sum(values['f1_score']['Prolog']) / len(values['f1_score']['Prolog']) if values['f1_score']['Prolog'] else 0
+        avg_error_prolog = sum(values['error']['Prolog']) / len(values['error']['Prolog']) if values['error']['Prolog'] else 0
         avg_TN_prolog = sum(values['TN']['Prolog'])
         avg_FP_prolog = sum(values['FP']['Prolog'])
         avg_FN_prolog = sum(values['FN']['Prolog'])
@@ -191,6 +229,10 @@ def average_stats(all_stats):
             'phase': 'Prolog',
             'model': model_name,
             'accuracy': avg_accuracy_prolog,
+            'precision': avg_precision_prolog,
+            'recall': avg_recall_prolog,
+            'f1_score': avg_f1_prolog,
+            'error': avg_error_prolog,
             'confusion_matrix': {
                 'TN': avg_TN_prolog,
                 'FP': avg_FP_prolog,
@@ -198,126 +240,65 @@ def average_stats(all_stats):
                 'TP': avg_TP_prolog
             },
         })
-stats = average_validation()
-average_stats(stats)
 
-# Inizializza Prolog
-prolog = Prolog()
+app = Flask(__name__)
 
-# Nomi dei parametri
-parameter_names = [
-    "Mean of the integrated profile",
-    "Standard deviation of the integrated profile",
-    "Excess kurtosis of the integrated profile",
-    "Skewness of the integrated profile",
-    "Mean of the DM-SNR curve",
-    "Standard deviation of the DM-SNR curve",
-    "Excess kurtosis of the DM-SNR curve",
-    "Skewness of the DM-SNR curve",
-]
+@app.route('/', methods=['GET', 'POST'])
+def index():
+    global matrix
+    
+    if request.method == 'POST':
+        data = [
+            float(request.form['mean_integrated']),
+            float(request.form['std_integrated']),
+            float(request.form['kurtosis_integrated']),
+            float(request.form['skewness_integrated']),
+            float(request.form['mean_dm_snr']),
+            float(request.form['std_dm_snr']),
+            float(request.form['kurtosis_dm_snr']),
+            float(request.form['skewness_dm_snr']),
+        ]
 
-# Funzione per il primo tasto
-def open_input_screen():
-    input_window = tk.Toplevel(root)
-    input_window.title("Inserimento Dati")
+        criteria = request.form['method']
+        predicted_class = classify_data(data, criteria, prolog)
 
-    tk.Label(input_window, text="Inserisci i parametri:", font=("Helvetica", 14)).grid(row=0, column=0, columnspan=2, pady=10)
+        if predicted_class == "pulsar":
+            result_text = "Classified object: Pulsar"
+            result_image = url_for('static', filename='pulsar.jpeg')
+        else:
+            result_text = "Classified object: Neutron Star"
+            result_image = url_for('static', filename='neutron.jpg')
+            
+        return render_template('index.html', 
+                                result_text=result_text,
+                                result_image=result_image,
+                                matrix = matrix)
+        
+    return render_template('index.html', 
+                           result_text="", 
+                           result_image="",
+                           matrix=matrix)
 
-    # Caselle di input per i parametri
-    inputs = []
-    for i, name in enumerate(parameter_names):
-        tk.Label(input_window, text=name + ":").grid(row=i + 1, column=0, padx=10, pady=5, sticky="e")
-        entry = tk.Entry(input_window)
-        entry.grid(row=i + 1, column=1, padx=10, pady=5, sticky="w")
-        inputs.append(entry)
 
-    # Menu a tendina per selezionare il criterio
-    tk.Label(input_window, text="Seleziona Criterio:").grid(row=len(parameter_names) + 1, column=0, padx=10, pady=10, sticky="e")
-    criteria = ttk.Combobox(input_window, values=["Gini", "Entropia"], state="readonly")
-    criteria.grid(row=len(parameter_names) + 1, column=1, padx=10, pady=10, sticky="w")
+def classify_data(data, criteria, prolog):
+    
+    prolog_file = "decision_tree_gini.pl" if criteria == "Gini" else "decision_tree_entropia.pl"
+    prolog.consult(prolog_file)
 
-    # Label per mostrare il risultato
-    result_label = tk.Label(input_window, text="", fg="blue", font=("Helvetica", 12))
-    result_label.grid(row=len(parameter_names) + 3, column=0, columnspan=2, pady=10)
+    params_str = ", ".join(map(str, data))
+    query = f"classify_example([{params_str}], PredictedClass)."
+    result = list(prolog.query(query))
+    if result:
+        predicted_class = result[0]['PredictedClass']
+        return predicted_class
+    else:
+        return "Unknown"
+    
 
-    # Funzione per eseguire la query
-    def execute_query():
-        selected_criteria = criteria.get()
-        if not selected_criteria:
-            messagebox.showerror("Errore", "Seleziona un criterio!")
-            return
+if __name__ == "__main__":
 
-        # Leggi i parametri
-        params = [entry.get() for entry in inputs]
-        if not all(params):
-            messagebox.showerror("Errore", "Inserisci tutti i parametri!")
-            return
-
-        # Costruisci la query
-        params_str = ", ".join(params)
-        query = f"classify_example([{params_str}], PredictedClass)."
-
-        # Determina il file Prolog da consultare
-        prolog_file = "decision_tree_gini.pl" if selected_criteria == "Gini" else "decision_tree_entropia.pl"
-
-        try:
-            # Consulta il file Prolog
-            prolog.consult(prolog_file)
-
-            # Esegui la query
-            result = list(prolog.query(query))
-            if result:
-                predicted_class = result[0]['PredictedClass']
-                result_label.config(text=f"Classe Predetta: {predicted_class}")
-            else:
-                result_label.config(text="Nessuna classe predetta trovata.")
-        except Exception as e:
-            result_label.config(text=f"Errore durante l'interazione con Prolog:\n{e}")
-
-    # Bottone per inviare la query
-    tk.Button(input_window, text="Esegui Query", command=execute_query).grid(row=len(parameter_names) + 2, column=0, columnspan=2, pady=10)
-
-    # Bottone per tornare alla home
-    tk.Button(input_window, text="Torna alla Home", command=input_window.destroy).grid(row=len(parameter_names) + 4, column=0, columnspan=2, pady=10)
-
-# Funzione per il secondo tasto
-def open_data_screen():
-    data_window = tk.Toplevel(root)
-    data_window.title("Risultati")
-
-    tk.Label(data_window, text="Risultati Statistici:", font=("Helvetica", 14)).pack(pady=10)
-
-    # Recupera e mostra i dati
-    stats_text = tk.Text(data_window, wrap="word", width=80, height=20)
-    stats_text.pack(padx=10, pady=10)
-
-    # Visualizza le statistiche
-    for stat in matrix:
-        stats_text.insert("end", f"Modello: {stat['model']}\n")
-        stats_text.insert("end", f"Fase: {stat['phase']}\n")
-        stats_text.insert("end", f"Accuratezza: {stat['accuracy']:.4f}\n")
-        stats_text.insert("end", "Matrice di Confusione:\n")
-        stats_text.insert("end", f"  TN: {stat['confusion_matrix']['TN']}\n")
-        stats_text.insert("end", f"  FP: {stat['confusion_matrix']['FP']}\n")
-        stats_text.insert("end", f"  FN: {stat['confusion_matrix']['FN']}\n")
-        stats_text.insert("end", f"  TP: {stat['confusion_matrix']['TP']}\n")
-        stats_text.insert("end", "-" * 40 + "\n")
-
-    stats_text.config(state="disabled")
-
-    # Bottone per chiudere la finestra e tornare alla home
-    tk.Button(data_window, text="Torna alla Home", command=data_window.destroy).pack(pady=10)
-
-# Finestra principale
-root = tk.Tk()
-root.title("Sistema di Classificazione")
-
-tk.Label(root, text="Sistema di Classificazione", font=("Helvetica", 16)).pack(pady=20)
-
-# Tasto 1
-tk.Button(root, text="Inserisci Parametri", command=open_input_screen, width=25).pack(pady=10)
-
-# Tasto 2
-tk.Button(root, text="Visualizza Risultati", command=open_data_screen, width=25).pack(pady=10)
-
-root.mainloop()
+    # Inizializza Prolog
+    prolog = Prolog()
+    stats = validation()
+    average_stats(stats)
+    app.run(debug=True)
