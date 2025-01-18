@@ -12,8 +12,6 @@ from decision_tree_gini import DecisionTreeGini
 
 from sklearn.model_selection import StratifiedKFold
 
-from gui import run_gui
-
 matrix = []
 def create_balanced_chunks(df, target_column='target_class', n_chunks=18):
 
