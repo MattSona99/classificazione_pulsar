@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 from sklearn import model_selection
 from sklearn.metrics import confusion_matrix
@@ -114,7 +115,7 @@ def create_balanced_chunks(df, target_column='target_class', n_chunks=18):
     return chunks
 
 
-def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
+def train_and_test(X_train, Y_train, X_test, Y_test, prolog, flag):
     stats = []
 
     models = [
@@ -159,56 +160,57 @@ def train_and_test(X_train, Y_train, X_test, Y_test, prolog):
         })
 
         # ========= TRAIN E TEST IN PROLOG =========
-        # Consulta il file Prolog corretto
-        prolog.consult(prolog_file)
+        if (flag == 1):
+            # Consulta il file Prolog corretto
+            prolog.consult(prolog_file)
 
-        # Esporta i dati in Prolog
-        export_to_prolog(X_train, Y_train, 'train_data.pl')
-        export_to_prolog(X_test, Y_test, 'test_data.pl')
+            # Esporta i dati in Prolog
+            export_to_prolog(X_train, Y_train, 'train_data.pl')
+            export_to_prolog(X_test, Y_test, 'test_data.pl')
 
-        # Esegui la query per il modello
-        run_tree_query = "run_tree(Result)."
-        for solution in prolog.query(run_tree_query):
-            result = solution['Result']  # Estratto direttamente da Prolog
+            # Esegui la query per il modello
+            run_tree_query = "run_tree(Result)."
+            for solution in prolog.query(run_tree_query):
+                result = solution['Result']  # Estratto direttamente da Prolog
 
-            # Parsing manuale del risultato
-            if isinstance(result, str):
-                # Rimuovi 'result(', 'accuracy(', 'confusion_matrix(' e le parentesi finali
-                result = result.replace('result(', '').replace('accuracy(', '').replace('confusion_matrix(',
-                                                                                        '').rstrip('))')
+                # Parsing manuale del risultato
+                if isinstance(result, str):
+                    # Rimuovi 'result(', 'accuracy(', 'confusion_matrix(' e le parentesi finali
+                    result = result.replace('result(', '').replace('accuracy(', '').replace('confusion_matrix(',
+                                                                                            '').rstrip('))')
 
-                # Divide la stringa in parti
-                parts = result.split(', ')
+                    # Divide la stringa in parti
+                    parts = result.split(', ')
 
-                # Rimuovi eventuali caratteri indesiderati come ')'
-                parts = [part.strip(')') for part in parts]
+                    # Rimuovi eventuali caratteri indesiderati come ')'
+                    parts = [part.strip(')') for part in parts]
 
-                # Converti la prima parte in float (accuratezza)
-                accuracy = float(parts[0])
-                precision = TP / (TP + FP) if (TP + FP) > 0 else 0
-                recall = TP / (TP + FN) if (TP + FN) > 0 else 0
-                f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
-                error = 1 - accuracy
+                    # Converti la prima parte in float (accuratezza)
+                    accuracy = float(parts[0])
+                    precision = TP / (TP + FP) if (TP + FP) > 0 else 0
+                    recall = TP / (TP + FN) if (TP + FN) > 0 else 0
+                    f1 = (2 * precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+                    error = 1 - accuracy
 
-                # Converti i valori della matrice di confusione in interi
-                TN, FP, FN, TP = map(int, parts[1:])
+                    # Converti i valori della matrice di confusione in interi
+                    TN, FP, FN, TP = map(int, parts[1:])
 
-                # Aggiungi ai dati statistici
-                stats.append({
-                    'phase': 'Prolog',
-                    'model': model_name,
-                    'accuracy': accuracy,
-                    'precision': precision,
-                    'recall': recall,
-                    'f1_score': f1,
-                    'error': error,
-                    'confusion_matrix': {
-                        'TN': TN,
-                        'FP': FP,
-                        'FN': FN,
-                        'TP': TP
-                    },
-                })
+                    # Aggiungi ai dati statistici
+                    stats.append({
+                        'phase': 'Prolog',
+                        'model': model_name,
+                        'accuracy': accuracy,
+                        'precision': precision,
+                        'recall': recall,
+                        'f1_score': f1,
+                        'error': error,
+                        'confusion_matrix': {
+                            'TN': TN,
+                            'FP': FP,
+                            'FN': FN,
+                            'TP': TP
+                        },
+                    })
 
     return stats
 
@@ -223,21 +225,20 @@ def validation(prolog):
 
         X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size=0.2, random_state=42)
 
-        stats = train_and_test(X_train, Y_train, X_test, Y_test, prolog)
+        stats = train_and_test(X_train, Y_train, X_test, Y_test, prolog, 1)
         all_stats.extend(stats)
 
     return all_stats
-
-def classify_data(data, criteria, prolog):
     
-    prolog_file = "decision_tree_gini.pl" if criteria == "Gini" else "decision_tree_entropia.pl"
-    prolog.consult(prolog_file)
+def classification(data):
+    df = pd.read_csv('pulsar_stars.csv')
+    X = df.drop('target_class', axis=1)
+    Y = df['target_class']
+    X_train, X_test, Y_train, Y_test = model_selection.train_test_split(X, Y, test_size=0.2, random_state=42)
+    model = DecisionTreeEntropia(max_depth=4, min_samples_leaf=1, min_information_gain=0.05)
+    model.train(X_train, Y_train) 
+    input_data = np.array(data).reshape(1, -1)
+    predicted_class = model.predict(input_data)[0]
 
-    params_str = ", ".join(map(str, data))
-    query = f"classify_example([{params_str}], PredictedClass)."
-    result = list(prolog.query(query))
-    if result:
-        predicted_class = result[0]['PredictedClass']
-        return predicted_class
-    else:
-        return "Unknown"
+    return predicted_class
+    

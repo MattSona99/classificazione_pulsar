@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, url_for 
 from pyswip import Prolog
-from functions import average_stats, classify_data, validation
+from functions import average_stats, validation, classification
 
 app = Flask(__name__)
 matrix = []
@@ -21,8 +21,7 @@ def index():
             float(request.form['skewness_dm_snr']),
         ]
 
-        criteria = request.form['method']
-        predicted_class = classify_data(data, criteria, prolog)
+        predicted_class = classification(data)
 
         if predicted_class == 1:
             result_text = "Classified object: Pulsar"
@@ -45,8 +44,10 @@ def index():
 if __name__ == "__main__":
     import os
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true":
+        # Validazione con chunks
         prolog = Prolog()
         prolog.query("set_prolog_flag(stack_limit, 3*10**9).")
         stats = validation(prolog)
         average_stats(stats, matrix)
+
     app.run(debug=True)
